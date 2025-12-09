@@ -7,6 +7,8 @@ function initApp() {
 		HEIGHT_KEY: 'notepad_height',
 		BOARD_KEY: 'whiteboard_state',
 		THEME_KEY: 'pref_theme_dark',
+		AVATAR_KEY: 'user_avatar',
+		NAME_KEY: 'user_name',
 		MARGIN: 4,
 		PUSH_MARGIN: 6
 	};
@@ -18,7 +20,9 @@ function initApp() {
 		themeToggle: document.getElementById('themeToggle'),
 		container: document.querySelector('.container'),
 		timeEl: document.getElementById('time'),
-		ipEl: document.getElementById('ip')
+		ipEl: document.getElementById('ip'),
+		avatar: document.querySelector('.avatar'),
+		name: document.getElementById('name')
 	};
 
 	// ===== 工具函数 =====
@@ -90,6 +94,14 @@ function initApp() {
 			if (type === 'text') {
 				el.innerText = state.content || '文本';
 				el.title = '双击编辑文字';
+				// 设置宽度
+				if (state.width) {
+					el.dataset.width = state.width;
+					el.style.width = state.width + 'px';
+				} else {
+					el.dataset.width = '240';
+					el.style.width = '240px';
+				}
 			} else {
 				const img = document.createElement('img');
 				img.src = state.content || state.src || '';
@@ -201,7 +213,10 @@ function initApp() {
 			let dragging = false, dragStart = null;
 
 			el.addEventListener('pointerdown', (e) => {
-				if (e.target.classList.contains('handle')) return;
+				// 如果是把手或宽度调整把手，不触发拖拽
+				if (e.target.classList.contains('handle') || e.target.classList.contains('width-handle')) return;
+				// 如果是文字项目且处于编辑模式，不触发拖拽
+				if (el.dataset.type === 'text' && el.contentEditable === 'true') return;
 				e.preventDefault();
 				el.setPointerCapture(e.pointerId);
 				dragging = true;
@@ -304,16 +319,105 @@ function initApp() {
 		attachTextEdit(el) {
 			if (el.dataset.type !== 'text') return;
 
+			// 初始化宽度（如果还没有设置）
+			if (!el.dataset.width) {
+				el.dataset.width = '240';
+				el.style.width = '240px';
+			} else {
+				el.style.width = el.dataset.width + 'px';
+			}
+
 			el.addEventListener('dblclick', (e) => {
 				e.stopPropagation();
-				el.contentEditable = 'true';
-				el.focus();
+				this.enterTextEditMode(el);
 			});
 
 			el.addEventListener('blur', () => {
-				el.contentEditable = 'false';
-				BoardState.save();
+				this.exitTextEditMode(el);
 			});
+		},
+
+		enterTextEditMode(el) {
+			// 进入编辑模式
+			el.contentEditable = 'true';
+			el.style.cursor = 'text';
+			
+			// 获取或创建宽度调整把手（右侧）
+			let widthHandle = el.querySelector('.width-handle');
+			if (!widthHandle) {
+				widthHandle = document.createElement('div');
+				widthHandle.className = 'width-handle';
+				el.appendChild(widthHandle);
+
+				// 宽度调整功能
+				let isResizing = false;
+				let startX = 0;
+				let startWidth = 0;
+
+				widthHandle.addEventListener('pointerdown', (e) => {
+					e.stopPropagation();
+					e.preventDefault();
+					isResizing = true;
+					startX = e.clientX;
+					startWidth = el.offsetWidth;
+					widthHandle.setPointerCapture(e.pointerId);
+					el.style.userSelect = 'none';
+				});
+
+				const handlePointerMove = (e) => {
+					if (!isResizing) return;
+					const deltaX = e.clientX - startX;
+					const newWidth = Math.max(80, startWidth + deltaX);
+					el.style.width = newWidth + 'px';
+					el.dataset.width = newWidth.toString();
+				};
+
+				const handlePointerUp = () => {
+					if (isResizing) {
+						isResizing = false;
+						el.style.userSelect = '';
+						BoardState.save();
+					}
+				};
+
+				document.addEventListener('pointermove', handlePointerMove);
+				document.addEventListener('pointerup', handlePointerUp);
+			}
+
+			// 悬停显示把手
+			const showHandle = () => {
+				if (el.contentEditable === 'true' && widthHandle) {
+					widthHandle.style.opacity = '1';
+				}
+			};
+			const hideHandle = () => {
+				if (widthHandle) {
+					widthHandle.style.opacity = '0';
+				}
+			};
+
+			el.addEventListener('mouseenter', showHandle);
+			el.addEventListener('mouseleave', hideHandle);
+
+			// 确保文字自动换行
+			el.style.whiteSpace = 'pre-wrap';
+			el.style.wordBreak = 'break-word';
+			el.style.overflowWrap = 'break-word';
+			
+			el.focus();
+		},
+
+		exitTextEditMode(el) {
+			el.contentEditable = 'false';
+			el.style.cursor = 'move';
+			
+			// 隐藏宽度调整把手
+			const widthHandle = el.querySelector('.width-handle');
+			if (widthHandle) {
+				widthHandle.style.opacity = '0';
+			}
+			
+			BoardState.save();
 		}
 	};
 
@@ -321,15 +425,22 @@ function initApp() {
 	const BoardState = {
 		save() {
 			if (!DOM.board) return;
-			const items = [...DOM.board.querySelectorAll('.board-item')].map(el => ({
-				id: el.dataset.id,
-				type: el.dataset.type,
-				x: Number(el.dataset.x) || 0,
-				y: Number(el.dataset.y) || 0,
-				scale: Number(el.dataset.scale) || 1,
-				rotation: Number(el.dataset.rotation) || 0,
-				content: el.dataset.type === 'text' ? el.innerText : el.dataset.src
-			}));
+			const items = [...DOM.board.querySelectorAll('.board-item')].map(el => {
+				const item = {
+					id: el.dataset.id,
+					type: el.dataset.type,
+					x: Number(el.dataset.x) || 0,
+					y: Number(el.dataset.y) || 0,
+					scale: Number(el.dataset.scale) || 1,
+					rotation: Number(el.dataset.rotation) || 0,
+					content: el.dataset.type === 'text' ? el.innerText : el.dataset.src
+				};
+				// 如果是文字项目，保存宽度
+				if (el.dataset.type === 'text' && el.dataset.width) {
+					item.width = Number(el.dataset.width) || 240;
+				}
+				return item;
+			});
 			Utils.setLocalStorage(CONFIG.BOARD_KEY, JSON.stringify(items));
 		},
 
@@ -385,9 +496,9 @@ function initApp() {
 			return !Utils.rectsIntersect(itemRect, containerRect);
 		},
 
-		addText(text, x, y, rotation = 0) {
+		addText(text, x, y, rotation = 0, width = 240) {
 			if (!DOM.board) return;
-			const defaultW = 240, defaultH = 80;
+			const defaultW = width, defaultH = 80;
 			
 			// 如果位置无效或未提供，使用默认位置
 			if (!this.isPositionValid(x, y, defaultW, defaultH)) {
@@ -396,7 +507,16 @@ function initApp() {
 				y = pos.y;
 			}
 			
-			BoardElement.createFromState({ id: Utils.makeId(), type: 'text', x, y, scale: 1, rotation: rotation || 0, content: text || '' });
+			BoardElement.createFromState({ 
+				id: Utils.makeId(), 
+				type: 'text', 
+				x, 
+				y, 
+				scale: 1, 
+				rotation: rotation || 0, 
+				content: text || '',
+				width: width
+			});
 			this.save();
 		},
 
@@ -446,6 +566,163 @@ function initApp() {
 			DOM.notepad.addEventListener('click', (e) => {
 				e.stopPropagation();
 				BoardElement.selectElement(null);
+			});
+		}
+	};
+
+	// ===== 头像和名字处理 =====
+	const UserProfile = {
+		init() {
+			this.initAvatar();
+			this.initName();
+		},
+
+		initAvatar() {
+			if (!DOM.avatar) return;
+
+			// 从缓存加载头像
+			const savedAvatar = Utils.getLocalStorage(CONFIG.AVATAR_KEY);
+			if (savedAvatar) {
+				DOM.avatar.src = savedAvatar;
+			}
+
+			// 创建隐藏的文件输入
+			const fileInput = document.createElement('input');
+			fileInput.type = 'file';
+			fileInput.accept = 'image/*';
+			fileInput.style.display = 'none';
+			document.body.appendChild(fileInput);
+
+			// 点击头像选择图片
+			DOM.avatar.addEventListener('click', () => {
+				fileInput.click();
+			});
+
+			// 添加鼠标悬停提示
+			DOM.avatar.style.cursor = 'pointer';
+			DOM.avatar.title = '点击更换头像';
+
+			// 文件选择处理
+			fileInput.addEventListener('change', (e) => {
+				const file = e.target.files[0];
+				if (!file) return;
+
+				// 验证文件类型
+				if (!file.type.startsWith('image/')) {
+					alert('请选择图片文件');
+					return;
+				}
+
+				// 验证文件大小（限制为 5MB）
+				if (file.size > 5 * 1024 * 1024) {
+					alert('图片大小不能超过 5MB');
+					return;
+				}
+
+				// 读取文件并转换为 base64
+				const reader = new FileReader();
+				reader.onload = (event) => {
+					const dataUrl = event.target.result;
+					DOM.avatar.src = dataUrl;
+					Utils.setLocalStorage(CONFIG.AVATAR_KEY, dataUrl);
+				};
+				reader.onerror = () => {
+					alert('图片读取失败，请重试');
+				};
+				reader.readAsDataURL(file);
+
+				// 清空文件输入，以便可以重复选择同一文件
+				fileInput.value = '';
+			});
+		},
+
+		initName() {
+			if (!DOM.name) return;
+
+			// 从缓存加载名字
+			const savedName = Utils.getLocalStorage(CONFIG.NAME_KEY);
+			if (savedName) {
+				DOM.name.textContent = savedName;
+			}
+
+			// 双击编辑名字
+			DOM.name.addEventListener('dblclick', (e) => {
+				e.stopPropagation();
+				this.editName();
+			});
+
+			// 添加鼠标悬停提示
+			DOM.name.style.cursor = 'text';
+			DOM.name.title = '双击编辑名字';
+		},
+
+		editName() {
+			if (!DOM.name) return;
+
+			const currentName = DOM.name.textContent;
+			const nameRect = DOM.name.getBoundingClientRect();
+			const input = document.createElement('input');
+			input.type = 'text';
+			input.value = currentName;
+			input.style.cssText = `
+				position: fixed;
+				left: ${nameRect.left}px;
+				top: ${nameRect.top}px;
+				width: ${Math.max(120, nameRect.width + 20)}px;
+				padding: 4px 8px;
+				border: 2px solid #636e72;
+				border-radius: 6px;
+				font-size: 18px;
+				font-weight: bold;
+				text-align: center;
+				font-family: inherit;
+				outline: none;
+				background: #fff;
+				z-index: 1000;
+				box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+			`;
+
+			// 深色模式样式
+			if (document.body.classList.contains('dark-mode')) {
+				input.style.background = 'rgba(30,40,55,0.95)';
+				input.style.color = '#f0f6fc';
+				input.style.borderColor = 'rgba(100,200,255,0.5)';
+				input.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)';
+			}
+
+			// 插入输入框
+			DOM.name.style.visibility = 'hidden';
+			document.body.appendChild(input);
+			input.focus();
+			input.select();
+
+			// 保存编辑
+			const saveName = () => {
+				const newName = input.value.trim();
+				if (newName) {
+					DOM.name.textContent = newName;
+					Utils.setLocalStorage(CONFIG.NAME_KEY, newName);
+				}
+				DOM.name.style.visibility = 'visible';
+				input.remove();
+			};
+
+			// 取消编辑
+			const cancelEdit = () => {
+				DOM.name.style.visibility = 'visible';
+				input.remove();
+			};
+
+			// 事件处理
+			input.addEventListener('blur', saveName);
+			input.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					saveName();
+				} else if (e.key === 'Escape') {
+					e.preventDefault();
+					cancelEdit();
+				}
 			});
 		}
 	};
@@ -590,6 +867,33 @@ function initApp() {
 				if (e.target === DOM.board) BoardElement.selectElement(null);
 			});
 
+			// 双击空白处创建文字项目
+			DOM.board.addEventListener('dblclick', (e) => {
+				// 如果点击的是白板本身（不是其他元素），创建文字项目
+				if (e.target === DOM.board) {
+					e.stopPropagation();
+					const boardRect = DOM.board.getBoundingClientRect();
+					const x = e.clientX - boardRect.left;
+					const y = e.clientY - boardRect.top;
+					
+					// 生成随机旋转角度
+					const randomRotation = Math.floor(Math.random() * 21) - 10;
+					
+					// 创建文字项目
+					BoardState.addText('', x, y, randomRotation, 240);
+					
+					// 选中新创建的元素并进入编辑模式
+					const newItem = DOM.board.querySelector('.board-item:last-child');
+					if (newItem && newItem.dataset.type === 'text') {
+						BoardElement.selectElement(newItem);
+						// 延迟一下，确保元素已渲染
+						setTimeout(() => {
+							ElementInteraction.enterTextEditMode(newItem);
+						}, 50);
+					}
+				}
+			});
+
 			DOM.board.addEventListener('pointerdown', () => DOM.board.focus());
 
 			window.addEventListener('resize', () => {
@@ -606,6 +910,7 @@ function initApp() {
 	Notepad.init();
 	Theme.init();
 	Theme.setup();
+	UserProfile.init();
 	PasteHandler.attach();
 	Keyboard.init();
 	TimeIP.init();

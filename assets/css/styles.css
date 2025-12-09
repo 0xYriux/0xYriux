@@ -93,6 +93,18 @@ body.dark-mode .theme-btn {
 	font-size: 48px;
 	box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 	flex-shrink: 0;
+	transition: all 0.3s ease;
+	object-fit: cover;
+}
+
+.avatar:hover {
+	transform: scale(1.05);
+	box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+	opacity: 0.9;
+}
+
+.avatar:active {
+	transform: scale(0.98);
 }
 
 .name {
@@ -326,6 +338,8 @@ body.dark-mode .board-hint {
 	color: #111;
 	white-space: pre-wrap;
 	word-break: break-word;
+	overflow-wrap: break-word;
+	box-sizing: border-box;
 }
 
 .board-item img {
@@ -488,7 +502,42 @@ body.dark-mode .board-item.selected .handle-rotate:hover {
 
 /* 文字可编辑时的样式 */
 .board-item.text[contenteditable="true"] {
-	outline: 2px dashed rgba(99,110,114,0.2);
+	outline: 2px dashed rgba(99,110,114,0.3);
+	background: rgba(255,255,255,0.95);
+	box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+
+body.dark-mode .board-item.text[contenteditable="true"] {
+	background: rgba(35,45,60,0.95);
+	outline: 2px dashed rgba(100,200,255,0.4);
+	box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+/* 宽度调整把手样式 */
+.width-handle {
+	position: absolute;
+	right: -8px;
+	top: 0;
+	bottom: 0;
+	width: 8px;
+	cursor: ew-resize;
+	z-index: 100;
+	background: rgba(99, 110, 114, 0.3);
+	border-radius: 4px;
+	opacity: 0;
+	transition: opacity 0.2s ease;
+}
+
+.width-handle:hover {
+	background: rgba(99, 110, 114, 0.6);
+}
+
+body.dark-mode .width-handle {
+	background: rgba(100, 200, 255, 0.3);
+}
+
+body.dark-mode .width-handle:hover {
+	background: rgba(100, 200, 255, 0.6);
 }
 
 @media (max-width: 800px) {
